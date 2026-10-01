@@ -1,0 +1,4 @@
+# ENVIRONMENT: 本机统一用 mise 管理 Runtime。
+# 与 pyproject.toml 中的 requires-python = ">=3.14" 严格对齐。
+[tools]
+python = "3.14"
