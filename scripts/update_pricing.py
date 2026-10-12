@@ -56,6 +56,12 @@ PLAN_TO_SOURCE: dict[str, str] = {
     "MiniMax Token Plan Max (Global)": "minimax-official",
     "MiniMax Token Plan Ultra": "minimax-official",
     "MiniMax Token Plan Ultra (Global)": "minimax-official",
+    "MiniMax M Plan Go (CN)": "minimax-official",
+    "MiniMax M Plan Go (CN Annual)": "minimax-official",
+    "MiniMax M Plan Explore (CN)": "minimax-official",
+    "MiniMax M Plan Explore (CN Annual)": "minimax-official",
+    "MiniMax M Plan Build (CN)": "minimax-official",
+    "MiniMax M Plan Build (CN Annual)": "minimax-official",
     "SuperGrok": "grok-build",
     "SuperGrok Lite": "grok-build",
     "SuperGrok Plus": "grok-build",
@@ -78,15 +84,11 @@ PLAN_TO_SOURCE: dict[str, str] = {
 }
 
 OPENCODE_GO_PLAN = "OpenCode Go"
-OPENCODE_DEEPSEEK_USAGE_FROM = 15.0
-OPENCODE_DEEPSEEK_USAGE_TO = 60.0
+OPENCODE_DEEPSEEK_MODEL = "deepseek-v4.1-flash"
+OPENCODE_DEEPSEEK_USAGE_FROM = 60.0
+OPENCODE_DEEPSEEK_USAGE_TO = 80.0
 COMMAND_CODE_GOAT_PLAN = "Command Code GOAT"
 COMMAND_CODE_GOAT_PRICE = 10.78
-COMMAND_CODE_GOAT_PROMO_PLAN = "Command Code GOAT (促销至 9/28)"
-COMMAND_CODE_GOAT_PROMO_MODEL = "deepseek-v4.1-flash"
-COMMAND_CODE_GOAT_PROMO_UNTIL = "2026-09-28"
-COMMAND_CODE_GOAT_BASE_ALLOWANCE = 40.0
-COMMAND_CODE_GOAT_PROMO_ALLOWANCE = 60.0
 
 PRICING_FIELDS = (
     "plan",
@@ -186,7 +188,6 @@ def recompute_real_usd_per_mtok(price_usd: float | None, monthly_tokens: int | N
 
 def apply_overrides(
     plan: str,
-    served_model: str,
     local_model_id: str,
     price_usd: float | None,
     monthly_tokens: int | None,
@@ -197,8 +198,7 @@ def apply_overrides(
     """返回 (price_usd, monthly_tokens, monthly_yi, real_usd_per_mtok, notes)。"""
     extra: list[str] = []
 
-    is_deepseek = served_model.startswith("deepseek-") or local_model_id.startswith("deepseek-")
-    if plan == OPENCODE_GO_PLAN and is_deepseek:
+    if plan == OPENCODE_GO_PLAN and local_model_id == OPENCODE_DEEPSEEK_MODEL:
         scale = OPENCODE_DEEPSEEK_USAGE_TO / OPENCODE_DEEPSEEK_USAGE_FROM
         if monthly_tokens is not None:
             monthly_tokens = int(round(monthly_tokens * scale))
@@ -206,7 +206,7 @@ def apply_overrides(
             monthly_yi = monthly_yi * scale
         real_usd_per_mtok = recompute_real_usd_per_mtok(price_usd, monthly_tokens)
         extra.append(
-            f"本仓覆盖：OpenCode Go DeepSeek 系单模型用量上限 "
+            f"本仓覆盖：OpenCode Go {OPENCODE_DEEPSEEK_MODEL} 单模型月额度 "
             f"${OPENCODE_DEEPSEEK_USAGE_FROM:g}→${OPENCODE_DEEPSEEK_USAGE_TO:g}，"
             f"额度 ×{scale:g}，price_usd 不变，按 price_usd/(monthly_tokens/1e6) 重算真实单价。"
         )
@@ -231,7 +231,6 @@ def row_to_pricing(
     local_model_id: str,
 ) -> dict[str, Any]:
     plan = (upstream.get("plan_name") or "").strip()
-    served = (upstream.get("served_model") or "").strip()
     price_usd = _parse_optional_float(upstream.get("price_usd"))
     monthly_tokens = _parse_optional_int(upstream.get("monthly_tokens"))
     monthly_yi = _parse_optional_float(upstream.get("monthly_yi"))
@@ -239,7 +238,7 @@ def row_to_pricing(
     notes = (upstream.get("decision_note") or "").strip()
 
     price_usd, monthly_tokens, monthly_yi, real, notes = apply_overrides(
-        plan, served, local_model_id, price_usd, monthly_tokens, monthly_yi, real, notes
+        plan, local_model_id, price_usd, monthly_tokens, monthly_yi, real, notes
     )
 
     return {
@@ -253,47 +252,6 @@ def row_to_pricing(
         "real_usd_per_mtok": real,
         "unmetered": _parse_unmetered(upstream.get("unmetered")),
         "promo_until": (upstream.get("promo_until") or "").strip() or None,
-        "confidence": (upstream.get("confidence") or "").strip() or None,
-        "citation": (upstream.get("source") or "").strip() or None,
-        "notes": notes or None,
-    }
-
-
-def build_command_code_goat_promo_row(
-    upstream: dict[str, str],
-    local_model_id: str,
-) -> dict[str, Any]:
-    upstream_notes = (upstream.get("decision_note") or "").strip()
-    price_usd = COMMAND_CODE_GOAT_PRICE
-    monthly_tokens = _parse_optional_int(upstream.get("monthly_tokens"))
-    monthly_yi = _parse_optional_float(upstream.get("monthly_yi"))
-
-    scale = COMMAND_CODE_GOAT_PROMO_ALLOWANCE / COMMAND_CODE_GOAT_BASE_ALLOWANCE
-    if monthly_tokens is not None:
-        monthly_tokens = int(round(monthly_tokens * scale))
-    if monthly_yi is not None:
-        monthly_yi = monthly_yi * scale
-    real_usd_per_mtok = recompute_real_usd_per_mtok(price_usd, monthly_tokens)
-
-    promo_note = (
-        f"本仓覆盖：Command Code GOAT 月费 10→{COMMAND_CODE_GOAT_PRICE}；"
-        f"促销期（至 {COMMAND_CODE_GOAT_PROMO_UNTIL}）优惠额度 "
-        f"${COMMAND_CODE_GOAT_BASE_ALLOWANCE:g}→${COMMAND_CODE_GOAT_PROMO_ALLOWANCE:g}（×{scale:g}），"
-        f"月额度按比例放大，按新月费与优惠额度重算真实单价。"
-    )
-    notes = f"{upstream_notes} | {promo_note}" if upstream_notes else promo_note
-
-    return {
-        "plan": COMMAND_CODE_GOAT_PROMO_PLAN,
-        "model": local_model_id,
-        "source": PLAN_TO_SOURCE.get(COMMAND_CODE_GOAT_PLAN, ""),
-        "billing": (upstream.get("billing") or "").strip() or None,
-        "price_usd": price_usd,
-        "monthly_tokens": monthly_tokens,
-        "monthly_yi": monthly_yi,
-        "real_usd_per_mtok": real_usd_per_mtok,
-        "unmetered": _parse_unmetered(upstream.get("unmetered")),
-        "promo_until": COMMAND_CODE_GOAT_PROMO_UNTIL,
         "confidence": (upstream.get("confidence") or "").strip() or None,
         "citation": (upstream.get("source") or "").strip() or None,
         "notes": notes or None,
@@ -331,8 +289,6 @@ def build_pricing(
             )
             continue
         latest.append(row_to_pricing(upstream, local_id))
-        if plan == COMMAND_CODE_GOAT_PLAN and local_id == COMMAND_CODE_GOAT_PROMO_MODEL:
-            latest.append(build_command_code_goat_promo_row(upstream, local_id))
 
     latest.sort(
         key=lambda r: (

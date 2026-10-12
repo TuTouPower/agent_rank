@@ -47,9 +47,8 @@ ______________________________________________________________________
 
 改动会写入该行 `notes`（接在上游 `decision_note` 后）：
 
-1. **OpenCode Go × DeepSeek 系**（`served_model` 以 `deepseek-` 开头）：将计算用的单模型月用量上限从上游隐含的 $15 改为 $60；`monthly_tokens` / `monthly_yi` 按 `60/15=4` 等比放大；`price_usd` 不变；`real_usd_per_mtok = price_usd / (monthly_tokens / 1e6)`。
+1. **OpenCode Go × deepseek-v4.1-flash**（本仓 id `deepseek-v4.1-flash`）：官网单模型月额度 $60→$80；`monthly_tokens` / `monthly_yi` 按 `80/60` 放大；`price_usd` 不变；`real_usd_per_mtok = price_usd / (monthly_tokens / 1e6)`。其余 DeepSeek 行（V4 Flash $30、V4 Pro $15、V4 Flash Vision Exp $15）直接用上游值，不再整体放大。
 2. **Command Code GOAT**：`price_usd` 从 10 改为 10.78；月额度不变；仅按新月费重算 `real_usd_per_mtok`。
-3. **Command Code GOAT × deepseek-v4.1-flash 促销期派生**：除保留常态行外，额外派生一条 `plan` 为 `Command Code GOAT (促销至 9/28)` 的优惠行，`promo_until` 设为 `2026-09-28`；额度按 $40→$60 放大 1.5 倍（月额度 41.408亿→62.112亿），按月费 10.78 重算真实单价。
 
 ______________________________________________________________________
 

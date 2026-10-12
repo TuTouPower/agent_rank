@@ -82,37 +82,79 @@ def test_pricing_row_fields_and_sortable(fixture_models, fixture_adopted):
 
 
 def test_opencode_deepseek_override(fixture_models, fixture_adopted):
-    """AC-004：OpenCode Go × deepseek- 额度 ×4，月费不变，真实单价变小，notes 含覆盖说明。"""
+    """AC-004：OpenCode Go × deepseek-v4.1-flash 额度 ×80/60，月费不变，真实单价变小，notes 含覆盖说明。"""
     latest, _ = up.build_pricing(fixture_models, fixture_adopted)
     row = next(r for r in latest if r["plan"] == "OpenCode Go" and r["model"] == "deepseek-v4.1-flash")
+    scale = 80 / 60
     assert row["price_usd"] == 10.0
-    assert row["monthly_tokens"] == 1552800000 * 4
-    assert row["monthly_yi"] == pytest.approx(15.528 * 4)
+    assert row["monthly_tokens"] == pytest.approx(1552800000 * scale)
+    assert row["monthly_yi"] == pytest.approx(15.528 * scale)
     expected_real = 10.0 / (row["monthly_tokens"] / 1e6)
     assert row["real_usd_per_mtok"] == pytest.approx(expected_real)
     assert row["real_usd_per_mtok"] < 0.0064399794
-    assert row["notes"] and "本仓覆盖" in row["notes"] and "15" in row["notes"] and "60" in row["notes"]
+    assert row["notes"] and "本仓覆盖" in row["notes"] and "60" in row["notes"] and "80" in row["notes"]
     assert row["source"] == "opencode-go"
 
 
 def test_opencode_deepseek_override_via_local_id():
-    """当上游 served_model 非 deepseek- 开头别名，但本仓 id 为 deepseek- 时仍应用覆盖。"""
-    models = [{"id": "deepseek-v4-custom", "pricing_aliases": ["ds-short-alias"]}]
+    """当上游 served_model 为别名、但本仓 id 为 deepseek-v4.1-flash 时仍应用覆盖。"""
+    models = [{"id": "deepseek-v4.1-flash", "pricing_aliases": ["ds-short-alias"]}]
     adopted = [
         {
             "plan_name": "OpenCode Go",
             "served_model": "ds-short-alias",
             "price_usd": "10.0",
+            "monthly_tokens": "6000000",
+            "monthly_yi": "6.0",
+            "real_usd_per_mtok": "1.6666667",
+            "decision_note": "",
+        }
+    ]
+    latest, _ = up.build_pricing(models, adopted)
+    assert len(latest) == 1
+    assert latest[0]["model"] == "deepseek-v4.1-flash"
+    assert latest[0]["monthly_tokens"] == 8000000
+    assert "本仓覆盖" in latest[0]["notes"]
+
+
+def test_opencode_other_deepseek_models_not_scaled():
+    """OpenCode Go 其余 DeepSeek 行（V4 Flash / V4 Pro / Vision Exp）不再被本仓放大。"""
+    models = [{"id": "deepseek-v4-flash"}]
+    adopted = [
+        {
+            "plan_name": "OpenCode Go",
+            "served_model": "deepseek-v4-flash",
+            "price_usd": "10",
             "monthly_tokens": "1000000",
-            "monthly_yi": "0.01",
+            "monthly_yi": "1.0",
             "real_usd_per_mtok": "10.0",
             "decision_note": "",
         }
     ]
     latest, _ = up.build_pricing(models, adopted)
     assert len(latest) == 1
-    assert latest[0]["monthly_tokens"] == 4000000
-    assert "本仓覆盖" in latest[0]["notes"]
+    assert latest[0]["monthly_tokens"] == 1000000
+    assert latest[0]["monthly_yi"] == pytest.approx(1.0)
+    assert latest[0]["notes"] is None
+
+
+def test_minimax_cn_plan_source_mapping():
+    """MiniMax M Plan (CN) 映射到 minimax-official。"""
+    models = [{"id": "minimax-m3.1-flash-preview"}]
+    adopted = [
+        {
+            "plan_name": "MiniMax M Plan Go (CN)",
+            "served_model": "minimax-m3.1-flash-preview",
+            "price_usd": "7.23",
+            "monthly_tokens": "1598000000",
+            "monthly_yi": "15.98",
+            "real_usd_per_mtok": "0.0045234823",
+            "decision_note": "",
+        }
+    ]
+    latest, _ = up.build_pricing(models, adopted)
+    assert len(latest) == 1
+    assert latest[0]["source"] == "minimax-official"
 
 
 def test_command_code_goat_override(fixture_models, fixture_adopted):
@@ -126,17 +168,17 @@ def test_command_code_goat_override(fixture_models, fixture_adopted):
     assert row["notes"] and "本仓覆盖" in row["notes"] and "10.78" in row["notes"]
 
 
-def test_command_code_goat_deepseek_promo_override():
-    """Command Code GOAT × deepseek-v4.1-flash：保留常态行，并新增 9.28 前促销行（$40→$60）。"""
+def test_command_code_goat_no_promo_row_derived():
+    """Command Code GOAT × deepseek-v4.1-flash：仅一条常态行，不再派生促销行。"""
     models = [{"id": "deepseek-v4.1-flash"}]
     adopted = [
         {
             "plan_name": "Command Code GOAT",
             "served_model": "deepseek-v4.1-flash",
             "price_usd": "10",
-            "monthly_tokens": "4140800000",
-            "monthly_yi": "41.408",
-            "real_usd_per_mtok": "0.0024149923",
+            "monthly_tokens": "6211200000",
+            "monthly_yi": "62.112",
+            "real_usd_per_mtok": "0.0016099948",
             "decision_note": "upstream goat note",
             "billing": "subscription",
             "source": "https://commandcode.ai/",
@@ -144,31 +186,17 @@ def test_command_code_goat_deepseek_promo_override():
     ]
     latest, unmatched = up.build_pricing(models, adopted)
     assert unmatched == []
-    assert len(latest) == 2
+    assert len(latest) == 1
 
-    base_row = next(r for r in latest if r["plan"] == "Command Code GOAT")
-    promo_row = next(r for r in latest if r["plan"] == "Command Code GOAT (促销至 9/28)")
-
-    # 常态行保持不动
-    assert base_row["model"] == "deepseek-v4.1-flash"
-    assert base_row["price_usd"] == 10.78
-    assert base_row["monthly_tokens"] == 4140800000
-    assert base_row["monthly_yi"] == pytest.approx(41.408)
-    assert base_row["promo_until"] is None
-    assert base_row["real_usd_per_mtok"] == pytest.approx(10.78 / 4140.8)
-
-    # 优惠期行
-    assert promo_row["model"] == "deepseek-v4.1-flash"
-    assert promo_row["price_usd"] == 10.78
-    assert promo_row["monthly_tokens"] == 6211200000
-    assert promo_row["monthly_yi"] == pytest.approx(62.112)
-    assert promo_row["promo_until"] == "2026-09-28"
-    assert promo_row["real_usd_per_mtok"] == pytest.approx(10.78 / 6211.2)
-    assert promo_row["notes"] and "促销期" in promo_row["notes"] and "60" in promo_row["notes"]
-
-    # 排序：promo 行单价更低排在前面
-    assert latest[0]["plan"] == "Command Code GOAT (促销至 9/28)"
-    assert latest[1]["plan"] == "Command Code GOAT"
+    row = latest[0]
+    assert row["plan"] == "Command Code GOAT"
+    assert row["model"] == "deepseek-v4.1-flash"
+    assert row["price_usd"] == 10.78
+    assert row["monthly_tokens"] == 6211200000
+    assert row["monthly_yi"] == pytest.approx(62.112)
+    assert row["promo_until"] is None
+    assert row["real_usd_per_mtok"] == pytest.approx(10.78 / 6211.2)
+    assert row["notes"] and "本仓覆盖" in row["notes"] and "10.78" in row["notes"]
 
 
 def test_cli_writes_outputs_when_complete(tmp_path):
